@@ -87,6 +87,7 @@ function getFilteredNotes() {
     
     if (currentFilter === 'pending') {
         return notes.filter(note => {
+            if (note.completed) return false;
             if (!note.dueDate) return true;
             const dueDate = getLocalDate(note.dueDate);
             dueDate.setHours(0, 0, 0, 0);
@@ -94,11 +95,14 @@ function getFilteredNotes() {
         });
     } else if (currentFilter === 'overdue') {
         return notes.filter(note => {
+            if (note.completed) return false;
             if (!note.dueDate) return false;
             const dueDate = getLocalDate(note.dueDate);
             dueDate.setHours(0, 0, 0, 0);
             return dueDate < today;
         });
+    } else if (currentFilter === 'completed') {
+        return notes.filter(note => note.completed === true);
     }
     
     return notes;
@@ -202,6 +206,9 @@ function loadNotes() {
             if (note.important === undefined) {
                 note.important = false;
             }
+            if (note.completed === undefined) {
+                note.completed = false;
+            }
         });
     }
 }
@@ -245,94 +252,32 @@ function toggleImportant(noteId) {
     event.stopPropagation();
 }
 
-function renderNotes() {
-    const container = document.getElementById('notesContainer');
-    const filteredNotes = getFilteredNotes();
-    
-    if (filteredNotes.length === 0) {
-        let message = 'Aún no hay notas agregadas';
-        if (currentFilter === 'pending') message = 'No hay notas pendientes';
-        if (currentFilter === 'overdue') message = 'No hay notas vencidas';
-        container.innerHTML = `<div class="empty-message">${message}</div>`;
-        return;
+function isListComplete(note) {
+    if (note.type !== 'grupal') return false;
+    if (!note.items || note.items.length === 0) return false;
+    return note.items.every(item => item.completed === true);
+}
+
+function updateListCompletionStatus(note) {
+    if (note.type === 'grupal') {
+        const wasCompleted = note.completed;
+        const isNowCompleted = isListComplete(note);
+        
+        if (isNowCompleted && !wasCompleted) {
+            note.completed = true;
+            note.completedDate = new Date().toISOString();
+        } else if (!isNowCompleted && wasCompleted) {
+            note.completed = false;
+            note.completedDate = null;
+        }
     }
-    
-    const sortedNotes = [...filteredNotes].sort((a, b) => {
-        if (a.important && !b.important) return -1;
-        if (!a.important && b.important) return 1;
-        return b.id - a.id;
-    });
-    
-    container.innerHTML = sortedNotes.map(note => {
-        const preview = getNotePreview(note);
-        const noteColor = note.color || (note.type === 'individual' ? '#1e3c72' : '#2a5298');
-        const bgColor = hexToRgba(noteColor, 0.1);
-        const isExpanded = expandedNotes.has(note.id);
-        const isImportant = note.important || false;
-        
-        let dueDateHtml = '';
-        if (note.dueDate) {
-            const dateClass = getDueDateClass(note.dueDate);
-            const dateText = getDueDateText(note.dueDate);
-            const formattedDate = formatDate(note.dueDate);
-            dueDateHtml = `<span class="note-due-date ${dateClass}" title="${dateText}">📅 ${formattedDate}</span>`;
-        }
-        
-        let itemsHtml = '';
-        if (note.type === 'grupal' && note.items && note.items.length > 0) {
-            itemsHtml = `
-                <div class="note-items ${isExpanded ? 'expanded' : ''}" id="items-${note.id}">
-                    <ul class="note-items-list">
-                        ${note.items.map((item, index) => `
-                            <li>
-                                <input type="checkbox" 
-                                       ${item.completed ? 'checked' : ''} 
-                                       onchange="toggleItemComplete(${note.id}, ${index}, this.checked)">
-                                <span class="${item.completed ? 'completed' : ''}">${escapeHtml(item.text)}</span>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-            `;
-        }
-        
-        return `
-            <div class="note ${note.type} ${isImportant ? 'important' : ''}" style="--note-color: ${noteColor}; --note-bg-color: ${bgColor}" data-id="${note.id}">
-                <div class="note-main">
-                    <div class="note-info" ${note.type === 'individual' ? `onclick="viewNote(${note.id})"` : `onclick="toggleExpand(${note.id})"`}>
-                        <button class="star-btn ${isImportant ? 'active' : ''}" onclick="toggleImportant(${note.id})" title="${isImportant ? 'Quitar de importantes' : 'Marcar como importante'}">
-                            ★
-                        </button>
-                        <span class="note-type-badge">${note.type === 'individual' ? 'Nota' : 'Lista'}</span>
-                        <h3 class="note-title" title="${escapeHtml(note.title)}">${escapeHtml(note.title)}</h3>
-                        <span class="note-preview" title="${escapeHtml(preview)}">${escapeHtml(preview)}</span>
-                        ${dueDateHtml}
-                    </div>
-                    <div class="note-actions">
-                        ${note.type === 'grupal' ? `
-                            <button class="expand-btn ${isExpanded ? 'expanded' : ''}" onclick="toggleExpand(${note.id})">
-                                ▼
-                            </button>
-                        ` : ''}
-                        <div class="note-menu" onclick="toggleMenu(${note.id})">
-                            <span class="note-menu-dots">⋮</span>
-                            <div class="note-options" id="menu-${note.id}">
-                                <button class="note-option" onclick="editNote(${note.id})">Editar</button>
-                                <button class="note-option delete" onclick="showConfirmModal(${note.id})">Eliminar</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                ${itemsHtml}
-            </div>
-        `;
-    }).join('');
 }
 
 function toggleItemComplete(noteId, itemIndex, completed) {
     const note = notes.find(n => n.id === noteId);
     if (note && note.items && note.items[itemIndex]) {
         note.items[itemIndex].completed = completed;
+        updateListCompletionStatus(note);
         saveNotesToStorage();
         renderNotes();
     }
@@ -639,6 +584,7 @@ function saveNote() {
                 type: 'individual',
                 color: color,
                 important: false,
+                completed: false,
                 dueDate: dueDate || null,
                 date: new Date().toISOString()
             };
@@ -678,6 +624,8 @@ function saveNote() {
         
         if (!isValid) return;
         
+        const isComplete = validItems.length > 0 && validItems.every(item => item.completed === true);
+        
         if (currentNoteId) {
             const noteIndex = notes.findIndex(n => n.id === currentNoteId);
             if (noteIndex !== -1) {
@@ -685,6 +633,12 @@ function saveNote() {
                 notes[noteIndex].items = validItems;
                 notes[noteIndex].color = color;
                 notes[noteIndex].dueDate = dueDate || null;
+                notes[noteIndex].completed = isComplete;
+                if (isComplete && !notes[noteIndex].completedDate) {
+                    notes[noteIndex].completedDate = new Date().toISOString();
+                } else if (!isComplete) {
+                    notes[noteIndex].completedDate = null;
+                }
             }
         } else {
             const newNote = {
@@ -694,8 +648,10 @@ function saveNote() {
                 type: 'grupal',
                 color: color,
                 important: false,
+                completed: isComplete,
                 dueDate: dueDate || null,
-                date: new Date().toISOString()
+                date: new Date().toISOString(),
+                completedDate: isComplete ? new Date().toISOString() : null
             };
             notes.push(newNote);
         }
@@ -806,6 +762,11 @@ function renderCalendar() {
                 return function() {
                     const notesOnDate = notes.filter(n => n.dueDate === dateStr);
                     if (notesOnDate.length > 0) {
+                        // Cerrar el calendario
+                        const calendarContainer = document.getElementById('calendarContainer');
+                        const toggleBtn = document.getElementById('calendarToggleBtn');
+                        calendarVisible = false;
+                        calendarContainer.style.display = 'none';
                         showCalendarNotes(dateObj, notesOnDate);
                     }
                 };
@@ -862,6 +823,98 @@ function viewNoteFromCalendar(noteId) {
         closeCalendarNotesModal();
         viewNote(noteId);
     }
+}
+
+function renderNotes() {
+    const container = document.getElementById('notesContainer');
+    const filteredNotes = getFilteredNotes();
+    
+    if (filteredNotes.length === 0) {
+        let message = 'Aún no hay notas agregadas';
+        if (currentFilter === 'pending') message = 'No hay notas pendientes';
+        if (currentFilter === 'overdue') message = 'No hay notas vencidas';
+        if (currentFilter === 'completed') message = 'No hay notas completadas';
+        container.innerHTML = `<div class="empty-message">${message}</div>`;
+        return;
+    }
+    
+    const sortedNotes = [...filteredNotes].sort((a, b) => {
+        if (a.important && !b.important) return -1;
+        if (!a.important && b.important) return 1;
+        return b.id - a.id;
+    });
+    
+    container.innerHTML = sortedNotes.map(note => {
+        const preview = getNotePreview(note);
+        const noteColor = note.color || (note.type === 'individual' ? '#1e3c72' : '#2a5298');
+        const bgColor = hexToRgba(noteColor, 0.1);
+        const isExpanded = expandedNotes.has(note.id);
+        const isImportant = note.important || false;
+        const isCompleted = note.completed || false;
+        
+        let dueDateHtml = '';
+        if (note.dueDate && !isCompleted) {
+            const dateClass = getDueDateClass(note.dueDate);
+            const dateText = getDueDateText(note.dueDate);
+            const formattedDate = formatDate(note.dueDate);
+            dueDateHtml = `<span class="note-due-date ${dateClass}" title="${dateText}">📅 ${formattedDate}</span>`;
+        } else if (note.dueDate && isCompleted) {
+            const formattedDate = formatDate(note.dueDate);
+            dueDateHtml = `<span class="note-due-date" style="background: #e0e0e0;">📅 ${formattedDate}</span>`;
+        }
+        
+        let itemsHtml = '';
+        if (note.type === 'grupal' && note.items && note.items.length > 0) {
+            itemsHtml = `
+                <div class="note-items ${isExpanded ? 'expanded' : ''}" id="items-${note.id}">
+                    <ul class="note-items-list">
+                        ${note.items.map((item, index) => `
+                            <li>
+                                <input type="checkbox" 
+                                       ${item.completed ? 'checked' : ''} 
+                                       onchange="toggleItemComplete(${note.id}, ${index}, this.checked)"
+                                       ${isCompleted ? 'disabled' : ''}>
+                                <span class="${item.completed ? 'completed' : ''}">${escapeHtml(item.text)}</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+        
+        const completedClass = isCompleted ? 'completed-note' : '';
+        
+        return `
+            <div class="note ${note.type} ${completedClass} ${isImportant ? 'important' : ''}" style="--note-color: ${noteColor}; --note-bg-color: ${bgColor}" data-id="${note.id}">
+                <div class="note-main">
+                    <div class="note-info" ${note.type === 'individual' ? `onclick="viewNote(${note.id})"` : `onclick="toggleExpand(${note.id})"`}>
+                        <button class="star-btn ${isImportant ? 'active' : ''}" onclick="toggleImportant(${note.id})" title="${isImportant ? 'Quitar de importantes' : 'Marcar como importante'}">
+                            ★
+                        </button>
+                        <span class="note-type-badge">${note.type === 'individual' ? 'Nota' : 'Lista'}</span>
+                        <h3 class="note-title" title="${escapeHtml(note.title)}">${escapeHtml(note.title)}</h3>
+                        <span class="note-preview" title="${escapeHtml(preview)}">${escapeHtml(preview)}</span>
+                        ${dueDateHtml}
+                    </div>
+                    <div class="note-actions">
+                        ${note.type === 'grupal' ? `
+                            <button class="expand-btn ${isExpanded ? 'expanded' : ''}" onclick="toggleExpand(${note.id})">
+                                ▼
+                            </button>
+                        ` : ''}
+                        <div class="note-menu" onclick="toggleMenu(${note.id})">
+                            <span class="note-menu-dots">⋮</span>
+                            <div class="note-options" id="menu-${note.id}">
+                                <button class="note-option" onclick="editNote(${note.id})">Editar</button>
+                                <button class="note-option delete" onclick="showConfirmModal(${note.id})">Eliminar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                ${itemsHtml}
+            </div>
+        `;
+    }).join('');
 }
 
 document.getElementById('fab').addEventListener('click', (e) => {
