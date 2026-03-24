@@ -4,6 +4,9 @@ let currentType = 'individual';
 let currentListItems = [];
 let expandedNotes = new Set();
 let noteToDelete = null;
+let currentFilter = 'all';
+let currentDate = new Date();
+let calendarVisible = false;
 
 const presetColors = [
     '#1e3c72', '#2a5298', '#8b5cf6', '#ec4899',
@@ -13,7 +16,13 @@ const presetColors = [
 document.addEventListener('DOMContentLoaded', () => {
     loadNotes();
     renderNotes();
-    
+    setupEventListeners();
+    setupFilterButtons();
+    setupCalendarToggle();
+    renderCalendar();
+});
+
+function setupEventListeners() {
     document.getElementById('noteTitle').addEventListener('input', () => {
         clearError('title');
     });
@@ -43,13 +52,103 @@ document.addEventListener('DOMContentLoaded', () => {
             confirmDeleteNote();
         }
     });
-});
+}
+
+function setupFilterButtons() {
+    const buttons = document.querySelectorAll('.filter-btn');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            buttons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilter = btn.dataset.filter;
+            renderNotes();
+        });
+    });
+}
+
+function setupCalendarToggle() {
+    const toggleBtn = document.getElementById('calendarToggleBtn');
+    const calendarContainer = document.getElementById('calendarContainer');
+    
+    toggleBtn.addEventListener('click', () => {
+        calendarVisible = !calendarVisible;
+        calendarContainer.style.display = calendarVisible ? 'block' : 'none';
+        if (calendarVisible) {
+            renderCalendar();
+        }
+    });
+}
+
+function getFilteredNotes() {
+    if (currentFilter === 'all') return notes;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (currentFilter === 'pending') {
+        return notes.filter(note => {
+            if (!note.dueDate) return true;
+            const dueDate = getLocalDate(note.dueDate);
+            dueDate.setHours(0, 0, 0, 0);
+            return dueDate >= today;
+        });
+    } else if (currentFilter === 'overdue') {
+        return notes.filter(note => {
+            if (!note.dueDate) return false;
+            const dueDate = getLocalDate(note.dueDate);
+            dueDate.setHours(0, 0, 0, 0);
+            return dueDate < today;
+        });
+    }
+    
+    return notes;
+}
+
+function getLocalDate(dateString) {
+    if (!dateString) return null;
+    const [year, month, day] = dateString.split('-');
+    return new Date(year, month - 1, day);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return null;
+    const date = getLocalDate(dateString);
+    return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+}
+
+function getDaysRemaining(dueDate) {
+    if (!dueDate) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = getLocalDate(dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffTime = due - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+}
+
+function getDueDateClass(dueDate) {
+    if (!dueDate) return '';
+    const daysRemaining = getDaysRemaining(dueDate);
+    if (daysRemaining < 0) return 'overdue';
+    if (daysRemaining <= 3) return 'soon';
+    return 'future';
+}
+
+function getDueDateText(dueDate) {
+    if (!dueDate) return null;
+    const daysRemaining = getDaysRemaining(dueDate);
+    if (daysRemaining < 0) return `Vencida hace ${Math.abs(daysRemaining)} días`;
+    if (daysRemaining === 0) return 'Vence hoy';
+    if (daysRemaining === 1) return 'Vence mañana';
+    return `Faltan ${daysRemaining} días`;
+}
 
 function showError(field, message) {
     const errorElement = document.getElementById(`${field}Error`);
     if (errorElement) {
         errorElement.textContent = message;
-        errorElement.style.display = 'flex';
+        errorElement.style.display = 'block';
     }
 }
 
@@ -65,7 +164,7 @@ function showListError(message) {
     const errorElement = document.getElementById('listError');
     if (errorElement) {
         errorElement.textContent = message;
-        errorElement.style.display = 'flex';
+        errorElement.style.display = 'block';
         setTimeout(() => {
             if (errorElement) errorElement.style.display = 'none';
         }, 3000);
@@ -83,6 +182,7 @@ function clearListError() {
 function clearAllErrors() {
     clearError('title');
     clearError('content');
+    clearError('date');
     clearListError();
     document.querySelectorAll('.list-item-input.error').forEach(input => {
         input.classList.remove('error');
@@ -108,6 +208,7 @@ function loadNotes() {
 
 function saveNotesToStorage() {
     localStorage.setItem('notes', JSON.stringify(notes));
+    renderCalendar();
 }
 
 function getNotePreview(note) {
@@ -146,13 +247,17 @@ function toggleImportant(noteId) {
 
 function renderNotes() {
     const container = document.getElementById('notesContainer');
+    const filteredNotes = getFilteredNotes();
     
-    if (notes.length === 0) {
-        container.innerHTML = '<div class="empty-message">Aun no hay notas agregadas</div>';
+    if (filteredNotes.length === 0) {
+        let message = 'Aún no hay notas agregadas';
+        if (currentFilter === 'pending') message = 'No hay notas pendientes';
+        if (currentFilter === 'overdue') message = 'No hay notas vencidas';
+        container.innerHTML = `<div class="empty-message">${message}</div>`;
         return;
     }
     
-    const sortedNotes = [...notes].sort((a, b) => {
+    const sortedNotes = [...filteredNotes].sort((a, b) => {
         if (a.important && !b.important) return -1;
         if (!a.important && b.important) return 1;
         return b.id - a.id;
@@ -164,6 +269,14 @@ function renderNotes() {
         const bgColor = hexToRgba(noteColor, 0.1);
         const isExpanded = expandedNotes.has(note.id);
         const isImportant = note.important || false;
+        
+        let dueDateHtml = '';
+        if (note.dueDate) {
+            const dateClass = getDueDateClass(note.dueDate);
+            const dateText = getDueDateText(note.dueDate);
+            const formattedDate = formatDate(note.dueDate);
+            dueDateHtml = `<span class="note-due-date ${dateClass}" title="${dateText}">📅 ${formattedDate}</span>`;
+        }
         
         let itemsHtml = '';
         if (note.type === 'grupal' && note.items && note.items.length > 0) {
@@ -190,9 +303,10 @@ function renderNotes() {
                         <button class="star-btn ${isImportant ? 'active' : ''}" onclick="toggleImportant(${note.id})" title="${isImportant ? 'Quitar de importantes' : 'Marcar como importante'}">
                             ★
                         </button>
-                        <span class="note-type-badge">${note.type}</span>
+                        <span class="note-type-badge">${note.type === 'individual' ? 'Nota' : 'Lista'}</span>
                         <h3 class="note-title" title="${escapeHtml(note.title)}">${escapeHtml(note.title)}</h3>
                         <span class="note-preview" title="${escapeHtml(preview)}">${escapeHtml(preview)}</span>
+                        ${dueDateHtml}
                     </div>
                     <div class="note-actions">
                         ${note.type === 'grupal' ? `
@@ -272,6 +386,12 @@ function viewNote(noteId) {
         }
     }
     
+    if (note.dueDate) {
+        const dateText = getDueDateText(note.dueDate);
+        const formattedDate = formatDate(note.dueDate);
+        contentHtml = `<div style="margin-bottom: 1rem; padding: 0.5rem; background: #f0f0f0; border-radius: 8px;">📅 Fecha: ${formattedDate} (${dateText})</div>${contentHtml}`;
+    }
+    
     document.getElementById('viewContent').innerHTML = contentHtml;
     document.getElementById('viewModal').classList.add('show');
 }
@@ -299,6 +419,7 @@ function showAddForm(type) {
     
     document.getElementById('formTitle').textContent = 'Agregar Nota';
     document.getElementById('noteTitle').value = '';
+    document.getElementById('noteDueDate').value = '';
     const defaultColor = type === 'individual' ? '#1e3c72' : '#2a5298';
     document.getElementById('colorPreview').style.backgroundColor = defaultColor;
     
@@ -317,6 +438,21 @@ function showAddForm(type) {
     closeFabMenu();
 }
 
+function updateListItemInput(index, value) {
+    const charCounter = document.getElementById(`char-counter-${index}`);
+    if (charCounter) {
+        charCounter.textContent = `${value.length}/100`;
+        if (value.length >= 100) {
+            charCounter.classList.add('limit-reached');
+        } else {
+            charCounter.classList.remove('limit-reached');
+        }
+    }
+    if (currentListItems[index]) {
+        currentListItems[index].text = value;
+    }
+}
+
 function renderListItems() {
     const container = document.getElementById('listItemsContainer');
     if (currentListItems.length === 0) {
@@ -329,11 +465,18 @@ function renderListItems() {
             <input type="checkbox" class="list-item-checkbox" 
                    ${item.completed ? 'checked' : ''} 
                    onchange="updateListItemComplete(${index}, this.checked)">
-            <input type="text" class="list-item-input ${item.completed ? 'completed' : ''}" 
-                   value="${escapeHtml(item.text)}" 
-                   placeholder="Escribe una tarea..." 
-                   onchange="updateListItem(${index}, this.value)"
-                   data-index="${index}">
+            <div class="list-item-input-wrapper">
+                <input type="text" class="list-item-input ${item.completed ? 'completed' : ''}" 
+                       value="${escapeHtml(item.text)}" 
+                       placeholder="Escribe una tarea (máx. 100 caracteres)..." 
+                       onchange="updateListItem(${index}, this.value)"
+                       oninput="updateListItemInput(${index}, this.value)"
+                       data-index="${index}"
+                       maxlength="100">
+                <div class="char-counter" id="char-counter-${index}">
+                    ${item.text.length}/100
+                </div>
+            </div>
             <button class="remove-item" onclick="removeListItem(${index})">×</button>
         </div>
     `).join('');
@@ -352,9 +495,21 @@ function addListItem() {
 }
 
 function updateListItem(index, value) {
+    if (value.length > 100) {
+        value = value.substring(0, 100);
+    }
     currentListItems[index].text = value;
     const input = document.querySelector(`.list-item-input[data-index="${index}"]`);
-    if (input && value.trim().length <= 200) input.classList.remove('error');
+    if (input && value.trim().length <= 100) input.classList.remove('error');
+    const charCounter = document.getElementById(`char-counter-${index}`);
+    if (charCounter) {
+        charCounter.textContent = `${value.length}/100`;
+        if (value.length >= 100) {
+            charCounter.classList.add('limit-reached');
+        } else {
+            charCounter.classList.remove('limit-reached');
+        }
+    }
 }
 
 function updateListItemComplete(index, completed) {
@@ -375,6 +530,7 @@ function showEditForm(note) {
     
     document.getElementById('formTitle').textContent = 'Editar Nota';
     document.getElementById('noteTitle').value = note.title;
+    document.getElementById('noteDueDate').value = note.dueDate || '';
     document.getElementById('colorPreview').style.backgroundColor = note.color || (note.type === 'individual' ? '#1e3c72' : '#2a5298');
     
     if (note.type === 'individual') {
@@ -418,6 +574,7 @@ function rgbToHex(rgb) {
 
 function saveNote() {
     const title = document.getElementById('noteTitle').value.trim();
+    const dueDate = document.getElementById('noteDueDate').value;
     const colorPreview = document.getElementById('colorPreview');
     const color = colorPreview.style.backgroundColor ? rgbToHex(colorPreview.style.backgroundColor) : '#1e3c72';
     
@@ -437,6 +594,18 @@ function saveNote() {
         isValid = false;
     } else {
         clearError('title');
+    }
+    
+    if (dueDate) {
+        const selectedDate = getLocalDate(dueDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (selectedDate < today) {
+            showError('date', 'La fecha no puede ser anterior a hoy');
+            isValid = false;
+        } else {
+            clearError('date');
+        }
     }
     
     if (currentType === 'individual') {
@@ -460,6 +629,7 @@ function saveNote() {
                 notes[noteIndex].title = title;
                 notes[noteIndex].content = content;
                 notes[noteIndex].color = color;
+                notes[noteIndex].dueDate = dueDate || null;
             }
         } else {
             const newNote = {
@@ -469,6 +639,7 @@ function saveNote() {
                 type: 'individual',
                 color: color,
                 important: false,
+                dueDate: dueDate || null,
                 date: new Date().toISOString()
             };
             notes.push(newNote);
@@ -483,7 +654,7 @@ function saveNote() {
         
         let hasLongTask = false;
         currentListItems.forEach((item, index) => {
-            if (item.text.length > 200) {
+            if (item.text.length > 100) {
                 const input = document.querySelector(`.list-item-input[data-index="${index}"]`);
                 if (input) {
                     input.classList.add('error');
@@ -493,7 +664,7 @@ function saveNote() {
         });
         
         if (hasLongTask) {
-            showListError('Cada tarea no puede exceder los 200 caracteres');
+            showListError('Cada tarea no puede exceder los 100 caracteres');
             isValid = false;
         }
         
@@ -513,6 +684,7 @@ function saveNote() {
                 notes[noteIndex].title = title;
                 notes[noteIndex].items = validItems;
                 notes[noteIndex].color = color;
+                notes[noteIndex].dueDate = dueDate || null;
             }
         } else {
             const newNote = {
@@ -522,6 +694,7 @@ function saveNote() {
                 type: 'grupal',
                 color: color,
                 important: false,
+                dueDate: dueDate || null,
                 date: new Date().toISOString()
             };
             notes.push(newNote);
@@ -575,6 +748,74 @@ function closeFabMenu() {
     document.getElementById('fabMenu').classList.remove('show');
 }
 
+function renderCalendar() {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    const firstDay = new Date(year, month, 1);
+    const startDate = new Date(year, month, 1);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+    
+    document.getElementById('currentMonthYear').textContent = 
+        `${currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`;
+    
+    const calendarDays = document.getElementById('calendarDays');
+    calendarDays.innerHTML = '';
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const notesByDate = {};
+    notes.forEach(note => {
+        if (note.dueDate) {
+            const dateKey = note.dueDate;
+            if (!notesByDate[dateKey]) {
+                notesByDate[dateKey] = [];
+            }
+            notesByDate[dateKey].push(note);
+        }
+    });
+    
+    for (let i = 0; i < 42; i++) {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + i);
+        const yearStr = date.getFullYear();
+        const monthStr = String(date.getMonth() + 1).padStart(2, '0');
+        const dayStr = String(date.getDate()).padStart(2, '0');
+        const dateKey = `${yearStr}-${monthStr}-${dayStr}`;
+        
+        const isCurrentMonth = date.getMonth() === month;
+        const hasNotes = notesByDate[dateKey] && notesByDate[dateKey].length > 0;
+        const isToday = date.toDateString() === today.toDateString();
+        
+        const dayDiv = document.createElement('div');
+        dayDiv.className = 'calendar-day';
+        if (!isCurrentMonth) dayDiv.classList.add('other-month');
+        if (hasNotes) dayDiv.classList.add('has-notes');
+        if (isToday) dayDiv.classList.add('today');
+        
+        dayDiv.innerHTML = `
+            <div class="day-number">${date.getDate()}</div>
+            ${hasNotes ? `<div class="notes-count">${notesByDate[dateKey].length}</div>` : ''}
+        `;
+        
+        if (hasNotes) {
+            dayDiv.style.cursor = 'pointer';
+            dayDiv.title = `${notesByDate[dateKey].length} nota(s) para este día`;
+            dayDiv.onclick = (function(dateStr) {
+                return function() {
+                    const notesOnDate = notes.filter(n => n.dueDate === dateStr);
+                    if (notesOnDate.length > 0) {
+                        alert(`Notas para ${date.toLocaleDateString('es-ES')}:\n${notesOnDate.map(n => `- ${n.title}`).join('\n')}`);
+                    }
+                };
+            })(dateKey);
+        }
+        
+        calendarDays.appendChild(dayDiv);
+    }
+}
+
 document.getElementById('fab').addEventListener('click', (e) => {
     e.stopPropagation();
     toggleFabMenu();
@@ -582,6 +823,16 @@ document.getElementById('fab').addEventListener('click', (e) => {
 
 document.getElementById('fabMenu').addEventListener('click', (e) => {
     e.stopPropagation();
+});
+
+document.getElementById('prevMonth').addEventListener('click', () => {
+    currentDate.setMonth(currentDate.getMonth() - 1);
+    renderCalendar();
+});
+
+document.getElementById('nextMonth').addEventListener('click', () => {
+    currentDate.setMonth(currentDate.getMonth() + 1);
+    renderCalendar();
 });
 
 document.addEventListener('keydown', (e) => {

@@ -10,10 +10,31 @@
     <nav class="navbar">
         <div class="nav-container">
             <h1 class="nav-title">NODUS</h1>
+            <button class="calendar-toggle-btn" id="calendarToggleBtn" title="Abrir calendario">
+                📅
+            </button>
         </div>
     </nav>
 
     <div class="container">
+        <div class="filter-buttons">
+            <button class="filter-btn active" data-filter="all">Todas</button>
+            <button class="filter-btn" data-filter="pending">Pendientes</button>
+            <button class="filter-btn" data-filter="overdue">Vencidas</button>
+        </div>
+
+        <div id="calendarContainer" class="calendar-container" style="display: none;">
+            <div class="calendar-header">
+                <button class="calendar-nav" id="prevMonth">‹</button>
+                <h3 id="currentMonthYear"></h3>
+                <button class="calendar-nav" id="nextMonth">›</button>
+            </div>
+            <div class="calendar-weekdays">
+                <div>D</div><div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div>
+            </div>
+            <div class="calendar-days" id="calendarDays"></div>
+        </div>
+
         <div id="notesContainer" class="notes-container">
         </div>
 
@@ -50,9 +71,15 @@
                     </div>
                     
                     <div class="form-group">
-                        <label class="form-label">Titulo</label>
-                        <input type="text" id="noteTitle" placeholder="Ingrese el titulo" class="form-input">
+                        <label class="form-label">Título</label>
+                        <input type="text" id="noteTitle" placeholder="Ingrese el título" class="form-input">
                         <div class="error-message" id="titleError"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Fecha (opcional)</label>
+                        <input type="date" id="noteDueDate" class="form-input">
+                        <div class="error-message" id="dateError"></div>
                     </div>
                     
                     <div id="individualContent" style="display: none;">
