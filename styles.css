@@ -412,8 +412,8 @@ body {
 }
 
 .note-due-date.future {
-    background: #e8f0fe;
-    color: #1e3c72;
+    background: #baffb8;
+    color: #1d8319;
 }
 
 .note-actions {
