@@ -129,6 +129,18 @@
                 </div>
             </div>
         </div>
+
+        <!-- Modal para notas del calendario -->
+        <div class="calendar-notes-modal" id="calendarNotesModal">
+            <div class="calendar-notes-modal-content">
+                <button class="close-modal" onclick="closeCalendarNotesModal()">×</button>
+                <h2 id="calendarNotesTitle">Notas del día</h2>
+                <div id="calendarNotesList" class="calendar-notes-list"></div>
+                <div class="calendar-notes-buttons">
+                    <button class="btn-cancel" onclick="closeCalendarNotesModal()">Cerrar</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>

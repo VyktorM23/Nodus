@@ -802,17 +802,65 @@ function renderCalendar() {
         if (hasNotes) {
             dayDiv.style.cursor = 'pointer';
             dayDiv.title = `${notesByDate[dateKey].length} nota(s) para este día`;
-            dayDiv.onclick = (function(dateStr) {
+            dayDiv.onclick = (function(dateStr, dateObj) {
                 return function() {
                     const notesOnDate = notes.filter(n => n.dueDate === dateStr);
                     if (notesOnDate.length > 0) {
-                        alert(`Notas para ${date.toLocaleDateString('es-ES')}:\n${notesOnDate.map(n => `- ${n.title}`).join('\n')}`);
+                        showCalendarNotes(dateObj, notesOnDate);
                     }
                 };
-            })(dateKey);
+            })(dateKey, new Date(date));
         }
         
         calendarDays.appendChild(dayDiv);
+    }
+}
+
+// Función para mostrar notas del calendario en un modal personalizado
+function showCalendarNotes(date, notesOnDate) {
+    const modal = document.getElementById('calendarNotesModal');
+    const title = document.getElementById('calendarNotesTitle');
+    const listContainer = document.getElementById('calendarNotesList');
+    
+    const formattedDate = date.toLocaleDateString('es-ES', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+    });
+    
+    title.textContent = `Notas para ${formattedDate}`;
+    
+    listContainer.innerHTML = notesOnDate.map(note => `
+        <div class="calendar-note-item" onclick="viewNoteFromCalendar(${note.id})">
+            <div class="calendar-note-title">${escapeHtml(note.title)}</div>
+            <div class="calendar-note-preview">
+                <span class="calendar-note-type">${note.type === 'individual' ? 'Nota' : 'Lista'}</span>
+                <span>${note.type === 'individual' ? 
+                    (note.content ? note.content.substring(0, 50) + (note.content.length > 50 ? '...' : '') : 'Sin contenido') : 
+                    `${note.items ? note.items.filter(item => item.completed).length : 0}/${note.items ? note.items.length : 0} tareas`}
+                </span>
+                ${note.dueDate ? `<span style="font-size: 0.7rem; color: #666;">📅 ${formatDate(note.dueDate)}</span>` : ''}
+            </div>
+        </div>
+    `).join('');
+    
+    modal.classList.add('show');
+    document.getElementById('notesContainer').classList.add('blurred');
+}
+
+// Función para cerrar el modal de notas del calendario
+function closeCalendarNotesModal() {
+    document.getElementById('calendarNotesModal').classList.remove('show');
+    document.getElementById('notesContainer').classList.remove('blurred');
+}
+
+// Función para ver una nota desde el calendario
+function viewNoteFromCalendar(noteId) {
+    const note = notes.find(n => n.id === noteId);
+    if (note) {
+        closeCalendarNotesModal();
+        viewNote(noteId);
     }
 }
 
@@ -840,6 +888,7 @@ document.addEventListener('keydown', (e) => {
         if (document.getElementById('formModal').classList.contains('show')) closeFormModal();
         if (document.getElementById('viewModal').classList.contains('show')) closeViewModal();
         if (document.getElementById('confirmModal').classList.contains('show')) closeConfirmModal();
+        if (document.getElementById('calendarNotesModal').classList.contains('show')) closeCalendarNotesModal();
     }
 });
 
@@ -853,4 +902,8 @@ document.getElementById('viewModal').addEventListener('click', (e) => {
 
 document.getElementById('confirmModal').addEventListener('click', (e) => {
     if (e.target === document.getElementById('confirmModal')) closeConfirmModal();
+});
+
+document.getElementById('calendarNotesModal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('calendarNotesModal')) closeCalendarNotesModal();
 });
