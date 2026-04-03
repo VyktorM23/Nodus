@@ -7,6 +7,7 @@ let noteToDelete = null;
 let currentFilter = 'all';
 let currentDate = new Date();
 let calendarVisible = false;
+let currentSort = 'important';
 
 const presetColors = [
     '#1e3c72', '#2a5298', '#8b5cf6', '#ec4899',
@@ -15,10 +16,15 @@ const presetColors = [
 
 document.addEventListener('DOMContentLoaded', () => {
     loadNotes();
-    renderNotes();
     setupEventListeners();
     setupFilterButtons();
     setupCalendarToggle();
+    setupSortAndSearch();
+    setupThemeToggle();
+    setupStatsPanel();
+    updateFilterCounts();
+    updateStats();
+    renderNotes();
     renderCalendar();
 });
 
@@ -66,6 +72,144 @@ function setupFilterButtons() {
     });
 }
 
+function setupSortAndSearch() {
+    const sortSelect = document.getElementById('sortSelect');
+    sortSelect.addEventListener('change', (e) => {
+        currentSort = e.target.value;
+        renderNotes();
+    });
+}
+
+function setupThemeToggle() {
+    const themeToggle = document.getElementById('themeToggleBtn');
+    const savedTheme = localStorage.getItem('theme');
+    
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+        themeToggle.textContent = '☀️';
+    }
+    
+    themeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+        themeToggle.textContent = isDark ? '☀️' : '🌙';
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    });
+}
+
+function setupStatsPanel() {
+    const statsToggle = document.getElementById('statsToggleBtn');
+    const statsPanel = document.getElementById('statsPanel');
+    const closeStats = document.getElementById('closeStatsBtn');
+    
+    statsToggle.addEventListener('click', () => {
+        updateStats();
+        statsPanel.style.display = statsPanel.style.display === 'none' ? 'block' : 'none';
+    });
+    
+    closeStats.addEventListener('click', () => {
+        statsPanel.style.display = 'none';
+    });
+}
+
+function updateFilterCounts() {
+    const allNotes = notes.length;
+    const individualNotes = notes.filter(n => n.type === 'individual').length;
+    const taskLists = notes.filter(n => n.type === 'grupal').length;
+    const pending = notes.filter(n => {
+        if (n.completed) return false;
+        if (n.type === 'individual') return false;
+        if (!n.dueDate) return true;
+        const dueDate = getLocalDate(n.dueDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate >= today;
+    }).length;
+    const overdue = notes.filter(n => {
+        if (n.completed) return false;
+        if (n.type === 'individual') return false;
+        if (!n.dueDate) return false;
+        const dueDate = getLocalDate(n.dueDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate < today;
+    }).length;
+    const completed = notes.filter(n => n.completed === true).length;
+    
+    document.getElementById('countAll').textContent = allNotes;
+    document.getElementById('countNotes').textContent = individualNotes;
+    document.getElementById('countLists').textContent = taskLists;
+    document.getElementById('countPending').textContent = pending;
+    document.getElementById('countOverdue').textContent = overdue;
+    document.getElementById('countCompleted').textContent = completed;
+}
+
+function isToday(dateString) {
+    if (!dateString) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const date = getLocalDate(dateString);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime() === today.getTime();
+}
+
+function updateStats() {
+    const totalNotes = notes.length;
+    const individualNotes = notes.filter(n => n.type === 'individual').length;
+    const taskLists = notes.filter(n => n.type === 'grupal').length;
+    const important = notes.filter(n => n.important).length;
+    const completed = notes.filter(n => n.completed).length;
+    const completionRate = totalNotes > 0 ? Math.round((completed / totalNotes) * 100) : 0;
+    
+    let totalTasks = 0;
+    let pendingTasks = 0;
+    let overdueLists = 0;
+    let completedToday = 0;
+    let addedToday = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    notes.forEach(note => {
+        if (note.type === 'grupal' && note.items) {
+            totalTasks += note.items.length;
+            const completedInList = note.items.filter(item => item.completed).length;
+            pendingTasks += note.items.length - completedInList;
+            
+            if (!note.completed && note.dueDate) {
+                const dueDate = getLocalDate(note.dueDate);
+                dueDate.setHours(0, 0, 0, 0);
+                if (dueDate < today) {
+                    overdueLists++;
+                }
+            }
+            
+            if (note.completedDate && isToday(note.completedDate.split('T')[0])) {
+                completedToday += note.items.filter(item => item.completed).length;
+            }
+        } else if (note.type === 'individual' && note.completed && note.completedDate && isToday(note.completedDate.split('T')[0])) {
+            completedToday++;
+        }
+        
+        if (note.date && isToday(note.date.split('T')[0])) {
+            addedToday++;
+        }
+    });
+    
+    document.getElementById('statTotalNotes').textContent = totalNotes;
+    document.getElementById('statIndividualNotes').textContent = individualNotes;
+    document.getElementById('statTaskLists').textContent = taskLists;
+    document.getElementById('statImportant').textContent = important;
+    document.getElementById('statCompleted').textContent = completed;
+    document.getElementById('statCompletionRate').textContent = completionRate + '%';
+    document.getElementById('statTotalTasks').textContent = totalTasks;
+    document.getElementById('statPendingTasks').textContent = pendingTasks;
+    document.getElementById('statOverdueLists').textContent = overdueLists;
+    document.getElementById('statCompletedToday').textContent = completedToday;
+    document.getElementById('statAddedToday').textContent = addedToday;
+}
+
 function setupCalendarToggle() {
     const toggleBtn = document.getElementById('calendarToggleBtn');
     const calendarContainer = document.getElementById('calendarContainer');
@@ -80,32 +224,75 @@ function setupCalendarToggle() {
 }
 
 function getFilteredNotes() {
-    if (currentFilter === 'all') return notes;
+    let filtered = [];
     
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    if (currentFilter === 'pending') {
-        return notes.filter(note => {
-            if (note.completed) return false;
-            if (!note.dueDate) return true;
-            const dueDate = getLocalDate(note.dueDate);
-            dueDate.setHours(0, 0, 0, 0);
-            return dueDate >= today;
-        });
-    } else if (currentFilter === 'overdue') {
-        return notes.filter(note => {
-            if (note.completed) return false;
-            if (!note.dueDate) return false;
-            const dueDate = getLocalDate(note.dueDate);
-            dueDate.setHours(0, 0, 0, 0);
-            return dueDate < today;
-        });
-    } else if (currentFilter === 'completed') {
-        return notes.filter(note => note.completed === true);
+    if (currentFilter === 'all') {
+        filtered = [...notes];
+    } else if (currentFilter === 'notes') {
+        filtered = notes.filter(note => note.type === 'individual');
+    } else if (currentFilter === 'lists') {
+        filtered = notes.filter(note => note.type === 'grupal');
+    } else {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (currentFilter === 'pending') {
+            filtered = notes.filter(note => {
+                if (note.completed) return false;
+                if (note.type === 'individual') return false;
+                if (!note.dueDate) return true;
+                const dueDate = getLocalDate(note.dueDate);
+                dueDate.setHours(0, 0, 0, 0);
+                return dueDate >= today;
+            });
+        } else if (currentFilter === 'overdue') {
+            filtered = notes.filter(note => {
+                if (note.completed) return false;
+                if (note.type === 'individual') return false;
+                if (!note.dueDate) return false;
+                const dueDate = getLocalDate(note.dueDate);
+                dueDate.setHours(0, 0, 0, 0);
+                return dueDate < today;
+            });
+        } else if (currentFilter === 'completed') {
+            filtered = notes.filter(note => note.completed === true);
+        } else {
+            filtered = [...notes];
+        }
     }
     
-    return notes;
+    filtered.sort((a, b) => {
+        if (currentSort === 'important') {
+            if (a.important && !b.important) return -1;
+            if (!a.important && b.important) return 1;
+            return b.id - a.id;
+        }
+        
+        switch(currentSort) {
+            case 'date_desc':
+                return b.id - a.id;
+            case 'date_asc':
+                return a.id - b.id;
+            case 'title_asc':
+                return a.title.localeCompare(b.title);
+            case 'title_desc':
+                return b.title.localeCompare(a.title);
+            case 'dueDate_asc':
+                if (!a.dueDate && !b.dueDate) return 0;
+                if (!a.dueDate) return 1;
+                if (!b.dueDate) return -1;
+                return new Date(a.dueDate) - new Date(b.dueDate);
+            case 'dueDate_desc':
+                if (!a.dueDate && !b.dueDate) return 0;
+                if (!a.dueDate) return 1;
+                if (!b.dueDate) return -1;
+                return new Date(b.dueDate) - new Date(a.dueDate);
+            default:
+                return b.id - a.id;
+        }
+    });
+    
+    return filtered;
 }
 
 function getLocalDate(dateString) {
@@ -142,10 +329,10 @@ function getDueDateClass(dueDate) {
 function getDueDateText(dueDate) {
     if (!dueDate) return null;
     const daysRemaining = getDaysRemaining(dueDate);
-    if (daysRemaining < 0) return `Vencida hace ${Math.abs(daysRemaining)} días`;
+    if (daysRemaining < 0) return `Vencida hace ${Math.abs(daysRemaining)} dias`;
     if (daysRemaining === 0) return 'Vence hoy';
-    if (daysRemaining === 1) return 'Vence mañana';
-    return `Faltan ${daysRemaining} días`;
+    if (daysRemaining === 1) return 'Vence manana';
+    return `Faltan ${daysRemaining} dias`;
 }
 
 function showError(field, message) {
@@ -209,12 +396,20 @@ function loadNotes() {
             if (note.completed === undefined) {
                 note.completed = false;
             }
+            if (note.type === 'individual') {
+                note.dueDate = null;
+            }
+            if (!note.date) {
+                note.date = new Date().toISOString();
+            }
         });
     }
 }
 
 function saveNotesToStorage() {
     localStorage.setItem('notes', JSON.stringify(notes));
+    updateFilterCounts();
+    updateStats();
     renderCalendar();
 }
 
@@ -331,10 +526,10 @@ function viewNote(noteId) {
         }
     }
     
-    if (note.dueDate) {
+    if (note.type === 'grupal' && note.dueDate) {
         const dateText = getDueDateText(note.dueDate);
         const formattedDate = formatDate(note.dueDate);
-        contentHtml = `<div style="margin-bottom: 1rem; padding: 0.5rem; background: #f0f0f0; border-radius: 8px;">📅 Fecha: ${formattedDate} (${dateText})</div>${contentHtml}`;
+        contentHtml = `<div style="margin-bottom: 1rem; padding: 0.5rem; background: var(--due-date-bg); border-radius: 8px;">Fecha: ${formattedDate} (${dateText})</div>${contentHtml}`;
     }
     
     document.getElementById('viewContent').innerHTML = contentHtml;
@@ -362,9 +557,18 @@ function showAddForm(type) {
     currentListItems = [];
     clearAllErrors();
     
-    document.getElementById('formTitle').textContent = 'Agregar Nota';
+    document.getElementById('formTitle').textContent = type === 'individual' ? 'Agregar Nota' : 'Agregar Lista de Tareas';
     document.getElementById('noteTitle').value = '';
-    document.getElementById('noteDueDate').value = '';
+    
+    const dateFieldGroup = document.getElementById('dateFieldGroup');
+    if (type === 'grupal') {
+        dateFieldGroup.style.display = 'block';
+        document.getElementById('noteDueDate').value = '';
+    } else {
+        dateFieldGroup.style.display = 'none';
+        document.getElementById('noteDueDate').value = '';
+    }
+    
     const defaultColor = type === 'individual' ? '#1e3c72' : '#2a5298';
     document.getElementById('colorPreview').style.backgroundColor = defaultColor;
     
@@ -401,7 +605,7 @@ function updateListItemInput(index, value) {
 function renderListItems() {
     const container = document.getElementById('listItemsContainer');
     if (currentListItems.length === 0) {
-        container.innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 1rem;">No hay tareas agregadas</p>';
+        container.innerHTML = '<p style="color: var(--text-light); text-align: center; padding: 1rem;">No hay tareas agregadas</p>';
         return;
     }
     
@@ -413,7 +617,7 @@ function renderListItems() {
             <div class="list-item-input-wrapper">
                 <input type="text" class="list-item-input ${item.completed ? 'completed' : ''}" 
                        value="${escapeHtml(item.text)}" 
-                       placeholder="Escribe una tarea (máx. 100 caracteres)..." 
+                       placeholder="Escribe una tarea (max. 100 caracteres)..." 
                        onchange="updateListItem(${index}, this.value)"
                        oninput="updateListItemInput(${index}, this.value)"
                        data-index="${index}"
@@ -473,9 +677,18 @@ function showEditForm(note) {
     currentType = note.type;
     clearAllErrors();
     
-    document.getElementById('formTitle').textContent = 'Editar Nota';
+    document.getElementById('formTitle').textContent = note.type === 'individual' ? 'Editar Nota' : 'Editar Lista de Tareas';
     document.getElementById('noteTitle').value = note.title;
-    document.getElementById('noteDueDate').value = note.dueDate || '';
+    
+    const dateFieldGroup = document.getElementById('dateFieldGroup');
+    if (note.type === 'grupal') {
+        dateFieldGroup.style.display = 'block';
+        document.getElementById('noteDueDate').value = note.dueDate || '';
+    } else {
+        dateFieldGroup.style.display = 'none';
+        document.getElementById('noteDueDate').value = '';
+    }
+    
     document.getElementById('colorPreview').style.backgroundColor = note.color || (note.type === 'individual' ? '#1e3c72' : '#2a5298');
     
     if (note.type === 'individual') {
@@ -519,37 +732,41 @@ function rgbToHex(rgb) {
 
 function saveNote() {
     const title = document.getElementById('noteTitle').value.trim();
-    const dueDate = document.getElementById('noteDueDate').value;
     const colorPreview = document.getElementById('colorPreview');
     const color = colorPreview.style.backgroundColor ? rgbToHex(colorPreview.style.backgroundColor) : '#1e3c72';
     
     let isValid = true;
     
     if (!title) {
-        showError('title', 'El título es obligatorio');
+        showError('title', 'El titulo es obligatorio');
         isValid = false;
     } else if (title.length < 3) {
-        showError('title', 'El título debe tener al menos 3 caracteres');
+        showError('title', 'El titulo debe tener al menos 3 caracteres');
         isValid = false;
     } else if (title.length > 100) {
-        showError('title', 'El título no puede exceder los 100 caracteres');
+        showError('title', 'El titulo no puede exceder los 100 caracteres');
         isValid = false;
     } else if (isDuplicateTitle(title, currentNoteId)) {
-        showError('title', 'Ya existe una nota con este título');
+        showError('title', 'Ya existe una nota con este titulo');
         isValid = false;
     } else {
         clearError('title');
     }
     
-    if (dueDate) {
-        const selectedDate = getLocalDate(dueDate);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (selectedDate < today) {
-            showError('date', 'La fecha no puede ser anterior a hoy');
-            isValid = false;
-        } else {
-            clearError('date');
+    let dueDate = null;
+    
+    if (currentType === 'grupal') {
+        dueDate = document.getElementById('noteDueDate').value;
+        if (dueDate) {
+            const selectedDate = getLocalDate(dueDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (selectedDate < today) {
+                showError('date', 'La fecha no puede ser anterior a hoy');
+                isValid = false;
+            } else {
+                clearError('date');
+            }
         }
     }
     
@@ -574,7 +791,7 @@ function saveNote() {
                 notes[noteIndex].title = title;
                 notes[noteIndex].content = content;
                 notes[noteIndex].color = color;
-                notes[noteIndex].dueDate = dueDate || null;
+                notes[noteIndex].dueDate = null;
             }
         } else {
             const newNote = {
@@ -585,7 +802,7 @@ function saveNote() {
                 color: color,
                 important: false,
                 completed: false,
-                dueDate: dueDate || null,
+                dueDate: null,
                 date: new Date().toISOString()
             };
             notes.push(newNote);
@@ -721,8 +938,10 @@ function renderCalendar() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
+    const taskNotes = notes.filter(note => note.type === 'grupal' && note.dueDate);
+    
     const notesByDate = {};
-    notes.forEach(note => {
+    taskNotes.forEach(note => {
         if (note.dueDate) {
             const dateKey = note.dueDate;
             if (!notesByDate[dateKey]) {
@@ -757,17 +976,15 @@ function renderCalendar() {
         
         if (hasNotes) {
             dayDiv.style.cursor = 'pointer';
-            dayDiv.title = `${notesByDate[dateKey].length} nota(s) para este día`;
+            dayDiv.title = `${notesByDate[dateKey].length} tarea(s) para este dia`;
             dayDiv.onclick = (function(dateStr, dateObj) {
                 return function() {
-                    const notesOnDate = notes.filter(n => n.dueDate === dateStr);
-                    if (notesOnDate.length > 0) {
-                        // Cerrar el calendario
+                    const tasksOnDate = taskNotes.filter(n => n.dueDate === dateStr);
+                    if (tasksOnDate.length > 0) {
                         const calendarContainer = document.getElementById('calendarContainer');
-                        const toggleBtn = document.getElementById('calendarToggleBtn');
                         calendarVisible = false;
                         calendarContainer.style.display = 'none';
-                        showCalendarNotes(dateObj, notesOnDate);
+                        showCalendarTasks(dateObj, tasksOnDate);
                     }
                 };
             })(dateKey, new Date(date));
@@ -777,8 +994,7 @@ function renderCalendar() {
     }
 }
 
-// Función para mostrar notas del calendario en un modal personalizado
-function showCalendarNotes(date, notesOnDate) {
+function showCalendarTasks(date, tasksOnDate) {
     const modal = document.getElementById('calendarNotesModal');
     const title = document.getElementById('calendarNotesTitle');
     const listContainer = document.getElementById('calendarNotesList');
@@ -790,33 +1006,36 @@ function showCalendarNotes(date, notesOnDate) {
         day: 'numeric' 
     });
     
-    title.textContent = `Notas para ${formattedDate}`;
+    title.textContent = `Tareas para ${formattedDate}`;
     
-    listContainer.innerHTML = notesOnDate.map(note => `
-        <div class="calendar-note-item" onclick="viewNoteFromCalendar(${note.id})">
-            <div class="calendar-note-title">${escapeHtml(note.title)}</div>
-            <div class="calendar-note-preview">
-                <span class="calendar-note-type">${note.type === 'individual' ? 'Nota' : 'Lista'}</span>
-                <span>${note.type === 'individual' ? 
-                    (note.content ? note.content.substring(0, 50) + (note.content.length > 50 ? '...' : '') : 'Sin contenido') : 
-                    `${note.items ? note.items.filter(item => item.completed).length : 0}/${note.items ? note.items.length : 0} tareas`}
-                </span>
-                ${note.dueDate ? `<span style="font-size: 0.7rem; color: #666;">📅 ${formatDate(note.dueDate)}</span>` : ''}
+    listContainer.innerHTML = tasksOnDate.map(note => {
+        const completedCount = note.items ? note.items.filter(item => item.completed).length : 0;
+        const totalCount = note.items ? note.items.length : 0;
+        return `
+            <div class="calendar-note-item" onclick="viewNoteFromCalendar(${note.id})">
+                <div class="calendar-note-title">${escapeHtml(note.title)}</div>
+                <div class="calendar-note-preview">
+                    <span class="calendar-note-type">Lista</span>
+                    <span>${completedCount}/${totalCount} tareas completadas</span>
+                    ${note.dueDate ? `<span style="font-size: 0.7rem; color: var(--text-secondary);"> ${formatDate(note.dueDate)}</span>` : ''}
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
+    
+    if (tasksOnDate.length === 0) {
+        listContainer.innerHTML = '<p style="text-align: center; color: var(--text-light); padding: 2rem;">No hay tareas para este dia</p>';
+    }
     
     modal.classList.add('show');
     document.getElementById('notesContainer').classList.add('blurred');
 }
 
-// Función para cerrar el modal de notas del calendario
 function closeCalendarNotesModal() {
     document.getElementById('calendarNotesModal').classList.remove('show');
     document.getElementById('notesContainer').classList.remove('blurred');
 }
 
-// Función para ver una nota desde el calendario
 function viewNoteFromCalendar(noteId) {
     const note = notes.find(n => n.id === noteId);
     if (note) {
@@ -830,21 +1049,17 @@ function renderNotes() {
     const filteredNotes = getFilteredNotes();
     
     if (filteredNotes.length === 0) {
-        let message = 'Aún no hay notas agregadas';
-        if (currentFilter === 'pending') message = 'No hay notas pendientes';
-        if (currentFilter === 'overdue') message = 'No hay notas vencidas';
-        if (currentFilter === 'completed') message = 'No hay notas completadas';
+        let message = 'Aun no hay elementos agregados';
+        if (currentFilter === 'notes') message = 'No hay notas individuales';
+        if (currentFilter === 'lists') message = 'No hay listas de tareas';
+        if (currentFilter === 'pending') message = 'No hay tareas pendientes';
+        if (currentFilter === 'overdue') message = 'No hay tareas vencidas';
+        if (currentFilter === 'completed') message = 'No hay elementos completados';
         container.innerHTML = `<div class="empty-message">${message}</div>`;
         return;
     }
     
-    const sortedNotes = [...filteredNotes].sort((a, b) => {
-        if (a.important && !b.important) return -1;
-        if (!a.important && b.important) return 1;
-        return b.id - a.id;
-    });
-    
-    container.innerHTML = sortedNotes.map(note => {
+    container.innerHTML = filteredNotes.map(note => {
         const preview = getNotePreview(note);
         const noteColor = note.color || (note.type === 'individual' ? '#1e3c72' : '#2a5298');
         const bgColor = hexToRgba(noteColor, 0.1);
@@ -853,14 +1068,14 @@ function renderNotes() {
         const isCompleted = note.completed || false;
         
         let dueDateHtml = '';
-        if (note.dueDate && !isCompleted) {
+        if (note.type === 'grupal' && note.dueDate && !isCompleted) {
             const dateClass = getDueDateClass(note.dueDate);
             const dateText = getDueDateText(note.dueDate);
             const formattedDate = formatDate(note.dueDate);
-            dueDateHtml = `<span class="note-due-date ${dateClass}" title="${dateText}">📅 ${formattedDate}</span>`;
-        } else if (note.dueDate && isCompleted) {
+            dueDateHtml = `<span class="note-due-date ${dateClass}" title="${dateText}"> ${formattedDate}</span>`;
+        } else if (note.type === 'grupal' && note.dueDate && isCompleted) {
             const formattedDate = formatDate(note.dueDate);
-            dueDateHtml = `<span class="note-due-date" style="background: #e0e0e0;">📅 ${formattedDate}</span>`;
+            dueDateHtml = `<span class="note-due-date" style="background: var(--due-date-bg);"> ${formattedDate}</span>`;
         }
         
         let itemsHtml = '';
@@ -942,6 +1157,19 @@ document.addEventListener('keydown', (e) => {
         if (document.getElementById('viewModal').classList.contains('show')) closeViewModal();
         if (document.getElementById('confirmModal').classList.contains('show')) closeConfirmModal();
         if (document.getElementById('calendarNotesModal').classList.contains('show')) closeCalendarNotesModal();
+        if (document.getElementById('statsPanel').style.display === 'block') {
+            document.getElementById('statsPanel').style.display = 'none';
+        }
+    }
+    
+    if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'n') {
+            e.preventDefault();
+            showAddForm('individual');
+        } else if (e.key === 'l') {
+            e.preventDefault();
+            showAddForm('grupal');
+        }
     }
 });
 
