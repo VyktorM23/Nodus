@@ -84,16 +84,32 @@ function setupThemeToggle() {
     const themeToggle = document.getElementById('themeToggleBtn');
     const savedTheme = localStorage.getItem('theme');
     
-    if (savedTheme === 'dark') {
-        document.body.classList.add('dark-mode');
-        themeToggle.textContent = '☀️';
+    // Función para actualizar el tema y los botones
+    function updateTheme() {
+        const isDark = document.body.classList.contains('dark-mode');
+        // Cambiar el emoji del botón de tema
+        themeToggle.textContent = isDark ? '☀️' : '🌙';
+        
+        // También actualizar el título del botón
+        themeToggle.title = isDark ? 'Modo claro' : 'Modo oscuro';
     }
     
+    // Aplicar tema guardado
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+        updateTheme();
+    } else {
+        // Asegurar modo claro por defecto
+        document.body.classList.remove('dark-mode');
+        updateTheme();
+    }
+    
+    // Evento click para cambiar tema
     themeToggle.addEventListener('click', () => {
         document.body.classList.toggle('dark-mode');
         const isDark = document.body.classList.contains('dark-mode');
-        themeToggle.textContent = isDark ? '☀️' : '🌙';
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        updateTheme();
     });
 }
 
@@ -1055,8 +1071,14 @@ function renderNotes() {
         if (currentFilter === 'pending') message = 'No hay tareas pendientes';
         if (currentFilter === 'overdue') message = 'No hay tareas vencidas';
         if (currentFilter === 'completed') message = 'No hay elementos completados';
-        container.innerHTML = `<div class="empty-message">${message}</div>`;
-        return;
+        container.innerHTML = `
+                <div class="empty-message">
+                    <p>${message}</p>
+                </div>
+            `;
+            //<img src="img/logo.png" alt="NODUS Logo" class="empty-logo empty-logo-light"> Va en la parte de arriba de esta linea
+            //<img src="img/logo3.png" alt="NODUS Logo" class="empty-logo empty-logo-dark">
+            return;
     }
     
     container.innerHTML = filteredNotes.map(note => {
